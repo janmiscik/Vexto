@@ -123,7 +123,7 @@ export default function Home() {
             ico: json.data.ico || "",
             dic: json.data.dic || "",
             icDph: json.data.icDph || "",
-            issueDate: json.data.issueDate || new Date().toISOString().slice(0, 10),
+            issueDate: json.data.issueDate || "",
             totalAmount: Number(json.data.totalAmount) || 0,
             source: "gemini_ai",
           });
@@ -246,6 +246,11 @@ export default function Home() {
         {/* Formulár po vyťažení na overenie údajov */}
         {currentReceipt && (
           <section className="p-5 bg-white rounded-2xl border border-neutral-200/80 shadow-md flex flex-col gap-4">
+            {currentReceipt.source === "manual_fallback" && (
+              <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <strong>Doklad nie je overený.</strong> {currentReceipt.note || "Údaje skontroluj a doplň ručne."}
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
                 Identifikátor
