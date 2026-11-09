@@ -7,9 +7,7 @@ import {
   Calendar,
   Euro,
   FileCheck,
-  ExternalLink,
   Loader2,
-  AlertTriangle,
   Download,
   Trash2,
   FileText,
@@ -26,7 +24,7 @@ export interface ParsedReceipt {
   organizationName: string;
   issueDate: string;
   totalAmount: number;
-  vatAmounts: Array<{
+  vatAmounts?: Array<{
     vatRate: number;
     vatAmount: number;
     baseAmount: number;
@@ -49,7 +47,7 @@ export default function Home() {
       try {
         setSavedReceipts(JSON.parse(local));
       } catch (e) {
-        console.error("Chyba načítania dokladov", e);
+        console.error("Chyba načítania dokladov z úložiska", e);
       }
     }
   }, []);
@@ -77,9 +75,11 @@ export default function Home() {
           ...json.data,
           id: crypto.randomUUID(),
         });
+      } else {
+        alert(json.error || "Nepodarilo sa načítať doklad z QR kódu");
       }
     } catch {
-      alert("Chyba spojenia");
+      alert("Chyba spojenia pri QR skenovaní");
     } finally {
       setLoading(false);
     }
@@ -93,6 +93,12 @@ export default function Home() {
     setLoading(true);
 
     const reader = new FileReader();
+
+    reader.onerror = () => {
+      alert("Nepodarilo sa načítať obrázok zo zariadenia");
+      setLoading(false);
+    };
+
     reader.onloadend = async () => {
       const base64String = reader.result as string;
 
@@ -104,19 +110,27 @@ export default function Home() {
         });
 
         const json = await res.json();
+
+        if (!res.ok || json.error) {
+          throw new Error(json.error || `Chyba servera (${res.status})`);
+        }
+
         if (json.data) {
           setCurrentReceipt({
-            ...json.data,
             id: crypto.randomUUID(),
             uid: `FOTO-${Date.now().toString().slice(-6)}`,
+            organizationName: json.data.organizationName || "Neznámy obchod",
+            ico: json.data.ico || "",
+            dic: json.data.dic || "",
+            icDph: json.data.icDph || "",
+            issueDate: json.data.issueDate || new Date().toISOString().slice(0, 10),
+            totalAmount: Number(json.data.totalAmount) || 0,
             source: "gemini_ai",
-            vatAmounts: json.data.vatAmounts || [],
           });
-        } else {
-          alert(json.error || "Nepodarilo sa prečítať bloček");
         }
-      } catch {
-        alert("Chyba pri odosielaní fotky");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Chyba pri spracovaní fotky";
+        alert(`OCR zlyhalo: ${msg}`);
       } finally {
         setLoading(false);
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -229,7 +243,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Vyťažený doklad na kontrolu */}
+        {/* Formulár po vyťažení na overenie údajov */}
         {currentReceipt && (
           <section className="p-5 bg-white rounded-2xl border border-neutral-200/80 shadow-md flex flex-col gap-4">
             <div className="flex items-center justify-between">
@@ -320,7 +334,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* Tabuľka dokladov */}
+        {/* Tabuľka uložených dokladov */}
         <section className="bg-white rounded-2xl p-5 border border-neutral-100 shadow-sm">
           <div className="flex items-center justify-between pb-4 border-b border-neutral-100">
             <div>
