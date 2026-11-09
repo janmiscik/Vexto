@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import QrScanner from "@/components/QrScanner";
 import {
   Building2,
@@ -13,6 +13,8 @@ import {
   Download,
   Trash2,
   FileText,
+  Camera,
+  Sparkles,
 } from "lucide-react";
 
 export interface ParsedReceipt {
@@ -36,22 +38,22 @@ export interface ParsedReceipt {
 
 export default function Home() {
   const [loading, setLoading] = useState<boolean>(false);
+  const [loadingText, setLoadingText] = useState<string>("Spracovávam...");
   const [currentReceipt, setCurrentReceipt] = useState<ParsedReceipt | null>(null);
   const [savedReceipts, setSavedReceipts] = useState<ParsedReceipt[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Načítanie uložených dokladov pri štarte
   useEffect(() => {
     const local = localStorage.getItem("vexto_receipts");
     if (local) {
       try {
         setSavedReceipts(JSON.parse(local));
       } catch (e) {
-        console.error("Chyba načítania lokálnych dokladov", e);
+        console.error("Chyba načítania dokladov", e);
       }
     }
   }, []);
 
-  // Uloženie do pamäte prehliadača
   const saveToStorage = (items: ParsedReceipt[]) => {
     setSavedReceipts(items);
     localStorage.setItem("vexto_receipts", JSON.stringify(items));
@@ -59,6 +61,7 @@ export default function Home() {
 
   const handleScan = async (scannedText: string) => {
     setCurrentReceipt(null);
+    setLoadingText("Overujem QR kód...");
     setLoading(true);
 
     try {
@@ -76,25 +79,63 @@ export default function Home() {
         });
       }
     } catch {
-      alert("Chyba spojenia so serverom");
+      alert("Chyba spojenia");
     } finally {
       setLoading(false);
     }
   };
 
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoadingText("Gemini AI číta údaje z bločku...");
+    setLoading(true);
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64String = reader.result as string;
+
+      try {
+        const res = await fetch("/api/ocr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: base64String }),
+        });
+
+        const json = await res.json();
+        if (json.data) {
+          setCurrentReceipt({
+            ...json.data,
+            id: crypto.randomUUID(),
+            uid: `FOTO-${Date.now().toString().slice(-6)}`,
+            source: "gemini_ai",
+            vatAmounts: json.data.vatAmounts || [],
+          });
+        } else {
+          alert(json.error || "Nepodarilo sa prečítať bloček");
+        }
+      } catch {
+        alert("Chyba pri odosielaní fotky");
+      } finally {
+        setLoading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    };
+
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveCurrent = () => {
     if (!currentReceipt) return;
-    const updated = [currentReceipt, ...savedReceipts];
-    saveToStorage(updated);
+    saveToStorage([currentReceipt, ...savedReceipts]);
     setCurrentReceipt(null);
   };
 
   const handleDelete = (id: string) => {
-    const filtered = savedReceipts.filter((item) => item.id !== id);
-    saveToStorage(filtered);
+    saveToStorage(savedReceipts.filter((item) => item.id !== id));
   };
 
-  // Funkcia na vygenerovanie a stiahnutie XML pre Pohodu
   const exportPohodaXml = () => {
     if (savedReceipts.length === 0) return;
 
@@ -106,8 +147,8 @@ export default function Home() {
       xml += `    <vch:voucher version="2.0">\n`;
       xml += `      <vch:voucherHeader>\n`;
       xml += `        <vch:voucherType>expense</vch:voucherType>\n`;
-      xml += `        <vch:date>${r.issueDate.slice(0, 10)}</vch:date>\n`;
-      xml += `        <vch:text>Nákup v hotovosti - ${r.organizationName}</vch:text>\n`;
+      xml += `        <vch:date>${(r.issueDate || new Date().toISOString()).slice(0, 10)}</vch:date>\n`;
+      xml += `        <vch:text>Nákup - ${r.organizationName}</vch:text>\n`;
       xml += `        <vch:partnerIdentity>\n`;
       xml += `          <vch:address>\n`;
       xml += `            <vch:company>${r.organizationName}</vch:company>\n`;
@@ -120,7 +161,7 @@ export default function Home() {
       xml += `        <vch:voucherItem>\n`;
       xml += `          <vch:text>Nákup tovaru / služieb</vch:text>\n`;
       xml += `          <vch:homeCurrency>\n`;
-      xml += `            <vch:priceNone>${Number(r.totalAmount).toFixed(2)}</vch:priceNone>\n`;
+      xml += `            <vch:priceNone>${Number(r.totalAmount || 0).toFixed(2)}</vch:priceNone>\n`;
       xml += `          </vch:homeCurrency>\n`;
       xml += `        </vch:voucherItem>\n`;
       xml += `      </vch:voucherDetail>\n`;
@@ -130,7 +171,6 @@ export default function Home() {
 
     xml += `</dat:dataPack>`;
 
-    // Stiahnutie súboru
     const blob = new Blob([xml], { type: "application/xml" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -146,67 +186,70 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-neutral-50 py-10 px-4 font-sans text-neutral-900">
-      <div className="max-w-xl mx-auto space-y-8">
+      <div className="max-w-xl mx-auto space-y-6">
         <header className="text-center">
           <span className="text-xs uppercase tracking-wider font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
             Vexto
           </span>
           <h1 className="text-2xl font-bold tracking-tight mt-3">
-            Evidencia pokladničných dokladov
+            Evidencia dokladov
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Skenuj bločky, kontroluj sumy a exportuj priamo do účtovníctva
+            Zosnímaj QR kód alebo odfoť celý bloček pomocou AI
           </p>
         </header>
 
-        {/* Skener */}
+        {/* Tlačidlo na AI fotenie */}
+        <div className="bg-white p-4 rounded-2xl border border-neutral-100 shadow-sm flex flex-col gap-2">
+          <input
+            type="file"
+            accept="image/*"
+            ref={fileInputRef}
+            onChange={handlePhotoUpload}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium py-3 px-4 rounded-xl text-sm transition-all shadow-sm cursor-pointer"
+          >
+            <Camera className="w-4 h-4" />
+            <Sparkles className="w-4 h-4 text-emerald-200" />
+            Odfoť celý bloček (AI Vyťaženie)
+          </button>
+        </div>
+
+        {/* QR Skener */}
         <QrScanner onScanSuccess={handleScan} />
 
         {loading && (
-          <div className="flex items-center justify-center gap-2 text-sm text-neutral-500 p-6 bg-white rounded-2xl border border-neutral-100 shadow-sm">
-            <Loader2 className="w-5 h-5 animate-spin text-neutral-900" />
-            <span>Spracovávam doklad...</span>
+          <div className="flex items-center justify-center gap-2 text-sm text-neutral-600 p-6 bg-white rounded-2xl border border-neutral-100 shadow-sm">
+            <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
+            <span>{loadingText}</span>
           </div>
         )}
 
-        {/* Karta práve naskenovaného dokladu */}
+        {/* Vyťažený doklad na kontrolu */}
         {currentReceipt && (
           <section className="p-5 bg-white rounded-2xl border border-neutral-200/80 shadow-md flex flex-col gap-4">
-            {currentReceipt.note && (
-              <div className="p-3 bg-amber-50 text-amber-900 text-xs rounded-xl border border-amber-200/60 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
-                <div>
-                  <p className="font-semibold">Automatické overenie cez API je obmedzené.</p>
-                  <p className="mt-0.5 text-amber-800">{currentReceipt.note}</p>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                  UID Dokladu
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                Identifikátor
+              </span>
+              {currentReceipt.source === "gemini_ai" && (
+                <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Vyťažené cez Gemini AI
                 </span>
-                {currentReceipt.verificationUrl && (
-                  <a
-                    href={currentReceipt.verificationUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1"
-                  >
-                    Otvoriť portál FS <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-              </div>
-              <p className="font-mono text-xs text-neutral-800 bg-neutral-50 p-2 rounded-lg border border-neutral-200 mt-1 break-all">
-                {currentReceipt.uid}
-              </p>
+              )}
             </div>
+            <p className="font-mono text-xs text-neutral-800 bg-neutral-50 p-2 rounded-lg border border-neutral-200 break-all">
+              {currentReceipt.uid}
+            </p>
 
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-medium text-neutral-700 flex items-center gap-1.5 mb-1">
-                  <Building2 className="w-3.5 h-3.5 text-neutral-400" /> Názov dodávateľa / IČO
+                  <Building2 className="w-3.5 h-3.5 text-neutral-400" /> Predajca / IČO
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   <input
@@ -215,7 +258,7 @@ export default function Home() {
                     onChange={(e) =>
                       setCurrentReceipt({ ...currentReceipt, organizationName: e.target.value })
                     }
-                    placeholder="Názov predajne"
+                    placeholder="Názov obchodu"
                     className="col-span-2 text-sm bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-neutral-900"
                   />
                   <input
@@ -237,7 +280,7 @@ export default function Home() {
                   </label>
                   <input
                     type="date"
-                    value={currentReceipt.issueDate.slice(0, 10)}
+                    value={(currentReceipt.issueDate || "").slice(0, 10)}
                     onChange={(e) =>
                       setCurrentReceipt({ ...currentReceipt, issueDate: e.target.value })
                     }
@@ -247,7 +290,7 @@ export default function Home() {
 
                 <div>
                   <label className="text-xs font-medium text-neutral-700 flex items-center gap-1.5 mb-1">
-                    <Euro className="w-3.5 h-3.5 text-neutral-400" /> Celková suma (€)
+                    <Euro className="w-3.5 h-3.5 text-neutral-400" /> Suma spolu (€)
                   </label>
                   <input
                     type="number"
@@ -272,20 +315,20 @@ export default function Home() {
               className="mt-2 w-full flex items-center justify-center gap-2 bg-neutral-900 hover:bg-neutral-800 text-white font-medium py-3 px-4 rounded-xl text-sm transition-all cursor-pointer shadow-sm"
             >
               <FileCheck className="w-4 h-4" />
-              Uložiť do zoznamu dokladov
+              Potvrdiť a uložiť do evidencie
             </button>
           </section>
         )}
 
-        {/* Zoznam uložených dokladov pre účtovníka */}
+        {/* Tabuľka dokladov */}
         <section className="bg-white rounded-2xl p-5 border border-neutral-100 shadow-sm">
           <div className="flex items-center justify-between pb-4 border-b border-neutral-100">
             <div>
               <h2 className="text-base font-bold text-neutral-900 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-neutral-500" /> Uložené doklady ({savedReceipts.length})
+                <FileText className="w-4 h-4 text-neutral-500" /> Doklady ({savedReceipts.length})
               </h2>
               <p className="text-xs text-neutral-400 mt-0.5">
-                Spolu za mesiac: <span className="font-bold text-neutral-900">{totalSum.toFixed(2)} €</span>
+                Spolu: <span className="font-bold text-neutral-900">{totalSum.toFixed(2)} €</span>
               </p>
             </div>
 
@@ -303,7 +346,7 @@ export default function Home() {
           <div className="divide-y divide-neutral-100 mt-2">
             {savedReceipts.length === 0 ? (
               <p className="text-xs text-neutral-400 py-6 text-center">
-                Zatiaľ nemáte uložené žiadne bločky. Zosnímajte prvý doklad kamerou.
+                Zatiaľ žiadne uložené doklady. Odfoťte bloček zeleným tlačidlom vyššie.
               </p>
             ) : (
               savedReceipts.map((r) => (
@@ -311,21 +354,16 @@ export default function Home() {
                   <div className="space-y-0.5">
                     <p className="font-semibold text-neutral-800">{r.organizationName}</p>
                     <p className="text-neutral-400 text-[11px]">
-                      {r.issueDate.slice(0, 10)} • IČO: {r.ico || "—"}
-                    </p>
-                    <p className="text-[10px] font-mono text-neutral-400 truncate max-w-[200px] sm:max-w-xs">
-                      {r.uid}
+                      {(r.issueDate || "").slice(0, 10)} • IČO: {r.ico || "—"}
                     </p>
                   </div>
-
                   <div className="flex items-center gap-3">
                     <span className="font-bold text-neutral-900 text-sm">
-                      {Number(r.totalAmount).toFixed(2)} €
+                      {Number(r.totalAmount || 0).toFixed(2)} €
                     </span>
                     <button
                       onClick={() => handleDelete(r.id)}
-                      className="text-neutral-400 hover:text-red-600 p-1 rounded-md transition-colors"
-                      title="Vymazať doklad"
+                      className="text-neutral-400 hover:text-red-600 p-1 rounded-md"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
