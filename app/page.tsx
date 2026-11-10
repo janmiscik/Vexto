@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import QrScanner from "@/components/QrScanner";
+import { saveReceipts, useSavedReceipts, type ParsedReceipt } from "@/lib/receipts-storage";
 import {
   Building2,
   Calendar,
@@ -15,46 +16,28 @@ import {
   Sparkles,
 } from "lucide-react";
 
-export interface ParsedReceipt {
-  id: string;
-  uid: string;
-  ico: string;
-  dic: string;
-  icDph: string;
-  organizationName: string;
-  issueDate: string;
-  totalAmount: number;
-  vatAmounts?: Array<{
-    vatRate: number;
-    vatAmount: number;
-    baseAmount: number;
-  }>;
-  verificationUrl?: string;
-  source?: string;
-  note?: string;
+function escapeXml(value: string | number): string {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 export default function Home() {
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingText, setLoadingText] = useState<string>("Spracovávam...");
   const [currentReceipt, setCurrentReceipt] = useState<ParsedReceipt | null>(null);
-  const [savedReceipts, setSavedReceipts] = useState<ParsedReceipt[]>([]);
+  const savedReceipts = useSavedReceipts();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    const local = localStorage.getItem("vexto_receipts");
-    if (local) {
-      try {
-        setSavedReceipts(JSON.parse(local));
-      } catch (e) {
-        console.error("Chyba načítania dokladov z úložiska", e);
-      }
-    }
-  }, []);
-
   const saveToStorage = (items: ParsedReceipt[]) => {
-    setSavedReceipts(items);
-    localStorage.setItem("vexto_receipts", JSON.stringify(items));
+    try {
+      saveReceipts(items);
+    } catch {
+      alert("Doklady sa nepodarilo uložiť. Skontroluj voľné miesto v prehliadači a jeho nastavenia úložiska.");
+    }
   };
 
   const handleScan = async (scannedText: string) => {
@@ -153,7 +136,13 @@ export default function Home() {
   const exportPohodaXml = () => {
     if (savedReceipts.length === 0) return;
 
-    let xml = `<?xml version="1.0" encoding="Windows-1250"?>\n`;
+    const missingDate = savedReceipts.some((receipt) => !/^\d{4}-\d{2}-\d{2}$/.test(receipt.issueDate || ""));
+    if (missingDate) {
+      alert("Niektoré doklady nemajú platný dátum. Doplň dátum pred exportom do Pohody.");
+      return;
+    }
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
     xml += `<dat:dataPack xmlns:dat="http://www.stormware.cz/schema/version_2/data.xsd" xmlns:vch="http://www.stormware.cz/schema/version_2/voucher.xsd" version="2.0" id="VextoExport">\n`;
 
     savedReceipts.forEach((r, index) => {
@@ -161,15 +150,15 @@ export default function Home() {
       xml += `    <vch:voucher version="2.0">\n`;
       xml += `      <vch:voucherHeader>\n`;
       xml += `        <vch:voucherType>expense</vch:voucherType>\n`;
-      xml += `        <vch:date>${(r.issueDate || new Date().toISOString()).slice(0, 10)}</vch:date>\n`;
-      xml += `        <vch:text>Nákup - ${r.organizationName}</vch:text>\n`;
+      xml += `        <vch:date>${escapeXml(r.issueDate.slice(0, 10))}</vch:date>\n`;
+      xml += `        <vch:text>Nákup - ${escapeXml(r.organizationName)}</vch:text>\n`;
       xml += `        <vch:partnerIdentity>\n`;
       xml += `          <vch:address>\n`;
-      xml += `            <vch:company>${r.organizationName}</vch:company>\n`;
-      xml += `            <vch:ico>${r.ico}</vch:ico>\n`;
+      xml += `            <vch:company>${escapeXml(r.organizationName)}</vch:company>\n`;
+      xml += `            <vch:ico>${escapeXml(r.ico)}</vch:ico>\n`;
       xml += `          </vch:address>\n`;
       xml += `        </vch:partnerIdentity>\n`;
-      xml += `        <vch:note>UID: ${r.uid}</vch:note>\n`;
+      xml += `        <vch:note>UID: ${escapeXml(r.uid)}</vch:note>\n`;
       xml += `      </vch:voucherHeader>\n`;
       xml += `      <vch:voucherDetail>\n`;
       xml += `        <vch:voucherItem>\n`;
@@ -185,7 +174,7 @@ export default function Home() {
 
     xml += `</dat:dataPack>`;
 
-    const blob = new Blob([xml], { type: "application/xml" });
+    const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
