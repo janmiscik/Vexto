@@ -1,6 +1,8 @@
 
 import { NextResponse } from "next/server";
 
+import { createClient } from "@/lib/supabase/server";
+
 import {
   MAX_IMAGE_BYTES,
   parseImageData,
@@ -14,6 +16,23 @@ import {
 
 export async function POST(request: Request) {
   try {
+    // Overenie prihlásenia používateľa
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        {
+          error: "Na použitie OCR sa musíte prihlásiť.",
+        },
+        { status: 401 }
+      );
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {

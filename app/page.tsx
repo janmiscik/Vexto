@@ -1,8 +1,13 @@
+
 "use client";
 
 import { useState, useRef } from "react";
 import QrScanner from "@/components/QrScanner";
-import { saveReceipts, useSavedReceipts, type ParsedReceipt } from "@/lib/receipts-storage";
+import {
+  saveReceipts,
+  useSavedReceipts,
+  type ParsedReceipt,
+} from "@/lib/receipts-storage";
 import {
   Building2,
   Calendar,
@@ -28,15 +33,28 @@ function escapeXml(value: string | number): string {
 export default function Home() {
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingText, setLoadingText] = useState<string>("Spracovávam...");
-  const [currentReceipt, setCurrentReceipt] = useState<ParsedReceipt | null>(null);
+  const [currentReceipt, setCurrentReceipt] =
+    useState<ParsedReceipt | null>(null);
+
   const savedReceipts = useSavedReceipts();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const saveToStorage = (items: ParsedReceipt[]) => {
+  const saveToStorage = async (
+    items: ParsedReceipt[]
+  ): Promise<boolean> => {
     try {
-      saveReceipts(items);
-    } catch {
-      alert("Doklady sa nepodarilo uložiť. Skontroluj voľné miesto v prehliadači a jeho nastavenia úložiska.");
+      await saveReceipts(items);
+      return true;
+    } catch (error) {
+      console.error("[Vexto] Uloženie účteniek zlyhalo:", error);
+
+      alert(
+        error instanceof Error
+          ? `Doklady sa nepodarilo uložiť: ${error.message}`
+          : "Doklady sa nepodarilo uložiť."
+      );
+
+      return false;
     }
   };
 
@@ -53,6 +71,7 @@ export default function Home() {
       });
 
       const json = await res.json();
+
       if (json.data) {
         setCurrentReceipt({
           ...json.data,
@@ -68,7 +87,9 @@ export default function Home() {
     }
   };
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -112,37 +133,60 @@ export default function Home() {
           });
         }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Chyba pri spracovaní fotky";
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Chyba pri spracovaní fotky";
+
         alert(`OCR zlyhalo: ${msg}`);
       } finally {
         setLoading(false);
-        if (fileInputRef.current) fileInputRef.current.value = "";
+
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
       }
     };
 
     reader.readAsDataURL(file);
   };
 
-  const handleSaveCurrent = () => {
+  const handleSaveCurrent = async () => {
     if (!currentReceipt) return;
-    saveToStorage([currentReceipt, ...savedReceipts]);
-    setCurrentReceipt(null);
+
+    const saved = await saveToStorage([
+      currentReceipt,
+      ...savedReceipts,
+    ]);
+
+    if (saved) {
+      setCurrentReceipt(null);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    saveToStorage(savedReceipts.filter((item) => item.id !== id));
+  const handleDelete = async (id: string) => {
+    await saveToStorage(
+      savedReceipts.filter((item) => item.id !== id)
+    );
   };
 
   const exportPohodaXml = () => {
     if (savedReceipts.length === 0) return;
 
-    const missingDate = savedReceipts.some((receipt) => !/^\d{4}-\d{2}-\d{2}$/.test(receipt.issueDate || ""));
+    const missingDate = savedReceipts.some(
+      (receipt) =>
+        !/^\d{4}-\d{2}-\d{2}$/.test(receipt.issueDate || "")
+    );
+
     if (missingDate) {
-      alert("Niektoré doklady nemajú platný dátum. Doplň dátum pred exportom do Pohody.");
+      alert(
+        "Niektoré doklady nemajú platný dátum. Doplň dátum pred exportom do Pohody."
+      );
       return;
     }
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+
     xml += `<dat:dataPack xmlns:dat="http://www.stormware.cz/schema/version_2/data.xsd" xmlns:vch="http://www.stormware.cz/schema/version_2/voucher.xsd" version="2.0" id="VextoExport">\n`;
 
     savedReceipts.forEach((r, index) => {
@@ -174,18 +218,28 @@ export default function Home() {
 
     xml += `</dat:dataPack>`;
 
-    const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
+    const blob = new Blob([xml], {
+      type: "application/xml;charset=utf-8",
+    });
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
+
     a.href = url;
-    a.download = `vexto_export_pohoda_${new Date().toISOString().slice(0, 10)}.xml`;
+    a.download = `vexto_export_pohoda_${new Date()
+      .toISOString()
+      .slice(0, 10)}.xml`;
+
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  const totalSum = savedReceipts.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+  const totalSum = savedReceipts.reduce(
+    (sum, item) => sum + Number(item.totalAmount || 0),
+    0
+  );
 
   return (
     <main className="min-h-screen bg-neutral-50 py-10 px-4 font-sans text-neutral-900">
@@ -194,15 +248,16 @@ export default function Home() {
           <span className="text-xs uppercase tracking-wider font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
             Vexto
           </span>
+
           <h1 className="text-2xl font-bold tracking-tight mt-3">
             Evidencia dokladov
           </h1>
+
           <p className="text-sm text-neutral-500 mt-1">
             Zosnímaj QR kód alebo odfoť celý bloček pomocou AI
           </p>
         </header>
 
-        {/* Tlačidlo na AI fotenie */}
         <div className="bg-white p-4 rounded-2xl border border-neutral-100 shadow-sm flex flex-col gap-2">
           <input
             type="file"
@@ -211,6 +266,7 @@ export default function Home() {
             onChange={handlePhotoUpload}
             className="hidden"
           />
+
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -218,11 +274,10 @@ export default function Home() {
           >
             <Camera className="w-4 h-4" />
             <Sparkles className="w-4 h-4 text-emerald-200" />
-            Odfoť celý bloček (AI Vyťaženie)
+            Odfoť celý bloček (AI vyťaženie)
           </button>
         </div>
 
-        {/* QR Skener */}
         <QrScanner onScanSuccess={handleScan} />
 
         {loading && (
@@ -232,24 +287,32 @@ export default function Home() {
           </div>
         )}
 
-        {/* Formulár po vyťažení na overenie údajov */}
         {currentReceipt && (
           <section className="p-5 bg-white rounded-2xl border border-neutral-200/80 shadow-md flex flex-col gap-4">
             {currentReceipt.source === "manual_fallback" && (
-              <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                <strong>Doklad nie je overený.</strong> {currentReceipt.note || "Údaje skontroluj a doplň ručne."}
+              <div
+                role="alert"
+                className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+              >
+                <strong>Doklad nie je overený.</strong>{" "}
+                {currentReceipt.note ||
+                  "Údaje skontroluj a doplň ručne."}
               </div>
             )}
+
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
                 Identifikátor
               </span>
+
               {currentReceipt.source === "gemini_ai" && (
                 <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" /> Vyťažené cez Gemini AI
+                  <Sparkles className="w-3 h-3" />
+                  Vyťažené cez Gemini AI
                 </span>
               )}
             </div>
+
             <p className="font-mono text-xs text-neutral-800 bg-neutral-50 p-2 rounded-lg border border-neutral-200 break-all">
               {currentReceipt.uid}
             </p>
@@ -257,23 +320,32 @@ export default function Home() {
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-medium text-neutral-700 flex items-center gap-1.5 mb-1">
-                  <Building2 className="w-3.5 h-3.5 text-neutral-400" /> Predajca / IČO
+                  <Building2 className="w-3.5 h-3.5 text-neutral-400" />
+                  Predajca / IČO
                 </label>
+
                 <div className="grid grid-cols-3 gap-2">
                   <input
                     type="text"
                     value={currentReceipt.organizationName}
                     onChange={(e) =>
-                      setCurrentReceipt({ ...currentReceipt, organizationName: e.target.value })
+                      setCurrentReceipt({
+                        ...currentReceipt,
+                        organizationName: e.target.value,
+                      })
                     }
                     placeholder="Názov obchodu"
                     className="col-span-2 text-sm bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-neutral-900"
                   />
+
                   <input
                     type="text"
                     value={currentReceipt.ico}
                     onChange={(e) =>
-                      setCurrentReceipt({ ...currentReceipt, ico: e.target.value })
+                      setCurrentReceipt({
+                        ...currentReceipt,
+                        ico: e.target.value,
+                      })
                     }
                     placeholder="IČO"
                     className="text-sm font-mono bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-neutral-900"
@@ -284,13 +356,18 @@ export default function Home() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-neutral-700 flex items-center gap-1.5 mb-1">
-                    <Calendar className="w-3.5 h-3.5 text-neutral-400" /> Dátum
+                    <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+                    Dátum
                   </label>
+
                   <input
                     type="date"
                     value={(currentReceipt.issueDate || "").slice(0, 10)}
                     onChange={(e) =>
-                      setCurrentReceipt({ ...currentReceipt, issueDate: e.target.value })
+                      setCurrentReceipt({
+                        ...currentReceipt,
+                        issueDate: e.target.value,
+                      })
                     }
                     className="w-full text-sm bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-neutral-900"
                   />
@@ -298,8 +375,10 @@ export default function Home() {
 
                 <div>
                   <label className="text-xs font-medium text-neutral-700 flex items-center gap-1.5 mb-1">
-                    <Euro className="w-3.5 h-3.5 text-neutral-400" /> Suma spolu (€)
+                    <Euro className="w-3.5 h-3.5 text-neutral-400" />
+                    Suma spolu (€)
                   </label>
+
                   <input
                     type="number"
                     step="0.01"
@@ -328,15 +407,19 @@ export default function Home() {
           </section>
         )}
 
-        {/* Tabuľka uložených dokladov */}
         <section className="bg-white rounded-2xl p-5 border border-neutral-100 shadow-sm">
           <div className="flex items-center justify-between pb-4 border-b border-neutral-100">
             <div>
               <h2 className="text-base font-bold text-neutral-900 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-neutral-500" /> Doklady ({savedReceipts.length})
+                <FileText className="w-4 h-4 text-neutral-500" />
+                Doklady ({savedReceipts.length})
               </h2>
+
               <p className="text-xs text-neutral-400 mt-0.5">
-                Spolu: <span className="font-bold text-neutral-900">{totalSum.toFixed(2)} €</span>
+                Spolu:{" "}
+                <span className="font-bold text-neutral-900">
+                  {totalSum.toFixed(2)} €
+                </span>
               </p>
             </div>
 
@@ -358,17 +441,26 @@ export default function Home() {
               </p>
             ) : (
               savedReceipts.map((r) => (
-                <div key={r.id} className="py-3 flex items-center justify-between text-xs">
+                <div
+                  key={r.id}
+                  className="py-3 flex items-center justify-between text-xs"
+                >
                   <div className="space-y-0.5">
-                    <p className="font-semibold text-neutral-800">{r.organizationName}</p>
+                    <p className="font-semibold text-neutral-800">
+                      {r.organizationName}
+                    </p>
+
                     <p className="text-neutral-400 text-[11px]">
-                      {(r.issueDate || "").slice(0, 10)} • IČO: {r.ico || "—"}
+                      {(r.issueDate || "").slice(0, 10)} • IČO:{" "}
+                      {r.ico || "—"}
                     </p>
                   </div>
+
                   <div className="flex items-center gap-3">
                     <span className="font-bold text-neutral-900 text-sm">
                       {Number(r.totalAmount || 0).toFixed(2)} €
                     </span>
+
                     <button
                       onClick={() => handleDelete(r.id)}
                       className="text-neutral-400 hover:text-red-600 p-1 rounded-md"
