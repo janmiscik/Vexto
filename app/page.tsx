@@ -19,6 +19,8 @@ import {
   FileText,
   Camera,
   Sparkles,
+  Pencil,
+  X,
 } from "lucide-react";
 
 function escapeXml(value: string | number): string {
@@ -36,6 +38,8 @@ export default function Home() {
   const [currentReceipt, setCurrentReceipt] =
     useState<ParsedReceipt | null>(null);
 
+  const [editingReceipt, setEditingReceipt] = useState<ParsedReceipt | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
   const savedReceipts = useSavedReceipts();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -165,9 +169,40 @@ export default function Home() {
   };
 
   const handleDelete = async (id: string) => {
-    await saveToStorage(
+    if (!window.confirm("Naozaj chceš natrvalo vymazať tento doklad?")) return;
+    const saved = await saveToStorage(
       savedReceipts.filter((item) => item.id !== id)
     );
+    if (saved && editingReceipt?.id === id) setEditingReceipt(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingReceipt || savingEdit) return;
+    if (!editingReceipt.organizationName.trim()) {
+      alert("Vyplň názov predajcu.");
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(editingReceipt.issueDate || "") ||
+        Number.isNaN(new Date(editingReceipt.issueDate).getTime()) ||
+        new Date(editingReceipt.issueDate).toISOString().slice(0, 10) !== editingReceipt.issueDate) {
+      alert("Zadaj platný dátum dokladu.");
+      return;
+    }
+    if (!Number.isFinite(editingReceipt.totalAmount) || editingReceipt.totalAmount < 0) {
+      alert("Zadaj platnú sumu dokladu.");
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const saved = await saveToStorage(
+        savedReceipts.map((item) =>
+          item.id === editingReceipt.id ? editingReceipt : item
+        )
+      );
+      if (saved) setEditingReceipt(null);
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const exportPohodaXml = () => {
@@ -407,6 +442,60 @@ export default function Home() {
           </section>
         )}
 
+        {editingReceipt && (
+          <section className="bg-white rounded-2xl p-5 border border-emerald-200 shadow-sm space-y-4" aria-label="Detail uloženého dokladu">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-bold">Detail a úprava dokladu</h2>
+              <button type="button" onClick={() => setEditingReceipt(null)} aria-label="Zavrieť detail" className="p-2 rounded-lg hover:bg-neutral-100">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {([
+                ["organizationName", "Predajca"],
+                ["ico", "IČO"],
+                ["dic", "DIČ"],
+                ["icDph", "IČ DPH"],
+              ] as const).map(([key, label]) => (
+                <label key={key} className="block text-xs font-medium text-neutral-700">
+                  {label}
+                  <input type="text" value={editingReceipt[key] || ""}
+                    onChange={(e) => setEditingReceipt({ ...editingReceipt, [key]: e.target.value })}
+                    className="mt-1 w-full text-sm bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2" />
+                </label>
+              ))}
+              <label className="block text-xs font-medium text-neutral-700">
+                Dátum
+                <input type="date" value={(editingReceipt.issueDate || "").slice(0, 10)}
+                  onChange={(e) => setEditingReceipt({ ...editingReceipt, issueDate: e.target.value })}
+                  className="mt-1 w-full text-sm bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2" />
+              </label>
+              <label className="block text-xs font-medium text-neutral-700">
+                Suma spolu (€)
+                <input type="number" min="0" step="0.01" value={editingReceipt.totalAmount}
+                  onChange={(e) => setEditingReceipt({ ...editingReceipt, totalAmount: e.target.value === "" ? NaN : Number(e.target.value) })}
+                  className="mt-1 w-full text-sm bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2" />
+              </label>
+            </div>
+            <div className="text-xs text-neutral-500 space-y-1 break-all">
+              <p><strong>UID:</strong> {editingReceipt.uid || "—"}</p>
+              <p><strong>Zdroj:</strong> {editingReceipt.source || "—"}</p>
+              {editingReceipt.verificationUrl && (
+                <p><a href={editingReceipt.verificationUrl} target="_blank" rel="noopener noreferrer" className="underline text-emerald-700">Otvoriť overenie dokladu</a></p>
+              )}
+              {editingReceipt.note && <p><strong>Poznámka:</strong> {editingReceipt.note}</p>}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={savingEdit} onClick={handleSaveEdit}
+                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg px-4 py-2 text-sm font-medium">
+                {savingEdit ? "Ukladám..." : "Uložiť zmeny"}
+              </button>
+              <button type="button" onClick={() => setEditingReceipt(null)}
+                className="bg-neutral-100 hover:bg-neutral-200 rounded-lg px-4 py-2 text-sm">Zrušiť</button>
+            </div>
+          </section>
+        )}
+
         <section className="bg-white rounded-2xl p-5 border border-neutral-100 shadow-sm">
           <div className="flex items-center justify-between pb-4 border-b border-neutral-100">
             <div>
@@ -462,6 +551,18 @@ export default function Home() {
                     </span>
 
                     <button
+                      type="button"
+                      onClick={() => setEditingReceipt({ ...r })}
+                      aria-label={`Zobraziť a upraviť doklad ${r.organizationName}`}
+                      title="Zobraziť a upraviť"
+                      className="text-neutral-500 hover:text-emerald-700 p-1 rounded-md"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={`Vymazať doklad ${r.organizationName}`}
                       onClick={() => handleDelete(r.id)}
                       className="text-neutral-400 hover:text-red-600 p-1 rounded-md"
                     >
