@@ -19,6 +19,7 @@ type Props = {
   onSortByChange: (value: SortBy) => void;
   onClear: () => void;
   onExport: () => void;
+  onExportCsv: () => void;
   onOpen: (receipt: ParsedReceipt) => void;
   onDelete: (id: string) => void;
 };
@@ -27,7 +28,7 @@ export default function ReceiptList({
   savedReceipts, filteredReceipts, totalSum, filteredSum,
   searchQuery, dateFrom, dateTo, sortBy,
   onSearchQueryChange, onDateFromChange, onDateToChange,
-  onSortByChange, onClear, onExport, onOpen, onDelete,
+  onSortByChange, onClear, onExport, onExportCsv, onOpen, onDelete,
 }: Props) {
   return (
         <section className="bg-white rounded-2xl p-5 border border-neutral-100 shadow-sm">
@@ -50,13 +51,20 @@ export default function ReceiptList({
             </div>
 
             {filteredReceipts.length > 0 && (
-              <button
+              <div className="flex flex-col gap-2 sm:items-end">
+              <button type="button"
                 onClick={onExport}
                 className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium py-2 px-3 rounded-lg shadow-sm transition-all cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 Export výberu XML (Pohoda)
               </button>
+              <button type="button" onClick={onExportCsv}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-800 hover:bg-neutral-100 cursor-pointer">
+                <Download className="w-3.5 h-3.5" />
+                Export výberu CSV (Excel)
+              </button>
+              </div>
             )}
           </div>
 

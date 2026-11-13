@@ -10,6 +10,7 @@ import ReceiptStatistics from "@/components/ReceiptStatistics";
 import ReceiptEditor from "@/components/ReceiptEditor";
 import ReceiptForm from "@/components/ReceiptForm";
 import { exportPohodaXml } from "@/lib/pohoda-export";
+import { exportReceiptsCsv } from "@/lib/receipt-csv-export";
 import { scanReceipt, recognizeReceiptPhoto } from "@/lib/receipt-capture";
 import { findPotentialDuplicate } from "@/lib/receipt-duplicates";
 import {
@@ -371,6 +372,7 @@ export default function Home() {
           onSortByChange={setSortBy}
           onClear={() => { setSearchQuery(""); setDateFrom(""); setDateTo(""); setSortBy("newest"); }}
           onExport={() => exportPohodaXml(filteredReceipts)}
+          onExportCsv={() => exportReceiptsCsv(filteredReceipts)}
           onOpen={openReceipt}
           onDelete={handleDelete}
         />
