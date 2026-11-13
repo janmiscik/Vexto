@@ -43,6 +43,32 @@ export default function ReceiptStatistics({ receipts }: Props) {
   }, {})).sort((a, b) => b.amount - a.amount).slice(0, 5);
   const merchantMaximum = Math.max(0, ...merchants.map((merchant) => merchant.amount));
 
+  // Only use itemized VAT data actually present on receipts.
+  const vatGroups = new Map<number, { base: number; vat: number; count: number }>();
+  let withoutVatBreakdown = 0;
+  for (const receipt of receipts) {
+    const entries = (receipt.vatAmounts ?? []).filter((entry) =>
+      entry && typeof entry.vatRate === "number" && Number.isFinite(entry.vatRate) &&
+      typeof entry.baseAmount === "number" && Number.isFinite(entry.baseAmount) &&
+      typeof entry.vatAmount === "number" && Number.isFinite(entry.vatAmount)
+    );
+    if (!entries.length) {
+      withoutVatBreakdown += 1;
+      continue;
+    }
+    const ratesInReceipt = new Set<number>();
+    for (const entry of entries) {
+      const rate = entry.vatRate;
+      const group = vatGroups.get(rate) ?? { base: 0, vat: 0, count: 0 };
+      group.base += entry.baseAmount;
+      group.vat += entry.vatAmount;
+      vatGroups.set(rate, group);
+      ratesInReceipt.add(rate);
+    }
+    for (const rate of ratesInReceipt) vatGroups.get(rate)!.count += 1;
+  }
+  const vatSummary = [...vatGroups.entries()].sort(([a], [b]) => a - b);
+
 
   return (
     <section className="rounded-2xl border border-neutral-100 bg-white p-5 shadow-sm" aria-label="Štatistiky výdavkov">
@@ -95,6 +121,29 @@ export default function ReceiptStatistics({ receipts }: Props) {
         </div>
       )}
 
+      <h3 className="mb-3 mt-6 text-sm font-semibold text-neutral-800">Prehľad DPH</h3>
+      {vatSummary.length === 0 ? (
+        <p className="text-sm text-neutral-500">Zatiaľ nie sú dostupné údaje o rozpisanej DPH.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-neutral-200 text-neutral-500">
+              <tr><th className="py-2 pr-2">Sadzba</th><th className="py-2 pr-2 text-right">Základ</th><th className="py-2 pr-2 text-right">DPH</th><th className="py-2 text-right">Spolu</th></tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {vatSummary.map(([rate, group]) => (
+                <tr key={rate} title={`Dokladov s touto sadzbou: ${group.count}`}>
+                  <td className="py-2 pr-2 font-medium text-neutral-800">{rate} %</td>
+                  <td className="py-2 pr-2 text-right text-neutral-700">{money(group.base)}</td>
+                  <td className="py-2 pr-2 text-right text-neutral-700">{money(group.vat)}</td>
+                  <td className="py-2 text-right font-medium text-neutral-800">{money(group.base + group.vat)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="mt-3 text-xs text-neutral-500">Doklady bez rozpisu DPH: {withoutVatBreakdown}. Zobrazené sú len dostupné údaje, bez odhadovania. Jeden doklad môže obsahovať viac sadzieb. Prehľad nie je daňovým priznaním.</p>
     </section>
   );
 }
