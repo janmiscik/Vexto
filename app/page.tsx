@@ -6,6 +6,7 @@ import { uploadReceiptImage, removeReceiptImage, getReceiptImageSignedUrl } from
 import QrScanner from "@/components/QrScanner";
 import type { SortBy } from "@/components/ReceiptFilters";
 import ReceiptList from "@/components/ReceiptList";
+import ReceiptStatistics from "@/components/ReceiptStatistics";
 import ReceiptEditor from "@/components/ReceiptEditor";
 import ReceiptForm from "@/components/ReceiptForm";
 import { exportPohodaXml } from "@/lib/pohoda-export";
@@ -352,6 +353,8 @@ export default function Home() {
             onSave={handleSaveEdit}
           />
         )}
+
+        <ReceiptStatistics receipts={savedReceipts} />
 
         <ReceiptList
           savedReceipts={savedReceipts}
