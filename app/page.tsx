@@ -10,6 +10,7 @@ import ReceiptEditor from "@/components/ReceiptEditor";
 import ReceiptForm from "@/components/ReceiptForm";
 import { exportPohodaXml } from "@/lib/pohoda-export";
 import { scanReceipt, recognizeReceiptPhoto } from "@/lib/receipt-capture";
+import { findPotentialDuplicate } from "@/lib/receipt-duplicates";
 import {
   saveReceipts,
   useSavedReceipts,
@@ -143,6 +144,11 @@ export default function Home() {
 
   const handleSaveCurrent = async () => {
     if (!currentReceipt || savingCurrent) return;
+    const duplicate = findPotentialDuplicate(currentReceipt, savedReceipts);
+    if (duplicate) {
+      const description = `${duplicate.receipt.organizationName} · ${duplicate.receipt.issueDate || "bez dátumu"} · ${Number(duplicate.receipt.totalAmount).toFixed(2)} €`;
+      if (!window.confirm(`Pozor, tento doklad už môže byť uložený.\n\n${description}\n\nDôvod: ${duplicate.reason}\n\nChceš ho napriek tomu uložiť?`)) return;
+    }
     setSavingCurrent(true);
     const file = pendingImageRef.current;
     let uploadedPath: string | null = null;
