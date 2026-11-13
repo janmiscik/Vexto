@@ -1,7 +1,8 @@
 
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
 import QrScanner from "@/components/QrScanner";
 import {
   saveReceipts,
@@ -42,6 +43,31 @@ export default function Home() {
   const [savingEdit, setSavingEdit] = useState(false);
   const savedReceipts = useSavedReceipts();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingImageRef = useRef<File | null>(null);
+  const [savingCurrent, setSavingCurrent] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    const path = editingReceipt?.imagePath;
+    if (!path) return;
+    let active = true;
+    const supabase = createClient();
+    void supabase.storage.from("receipt-images")
+      .createSignedUrl(path, 60 * 10)
+      .then(({ data, error }) => {
+        if (!active) return;
+        setImageUrl(error ? null : (data?.signedUrl ?? null));
+        setImageError(Boolean(error));
+      });
+    return () => { active = false; };
+  }, [editingReceipt?.imagePath]);
+
+  const openReceipt = (receipt: ParsedReceipt) => {
+    setImageUrl(null);
+    setImageError(false);
+    setEditingReceipt({ ...receipt });
+  };
 
   const saveToStorage = async (
     items: ParsedReceipt[]
@@ -63,6 +89,7 @@ export default function Home() {
   };
 
   const handleScan = async (scannedText: string) => {
+    pendingImageRef.current = null;
     setCurrentReceipt(null);
     setLoadingText("Overujem QR kód...");
     setLoading(true);
@@ -96,6 +123,13 @@ export default function Home() {
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) {
+      alert("Povolené sú JPG, PNG a WebP do 8 MB.");
+      e.target.value = "";
+      return;
+    }
+    pendingImageRef.current = null;
+    setCurrentReceipt(null);
 
     setLoadingText("Gemini AI číta údaje z bločku...");
     setLoading(true);
@@ -124,6 +158,7 @@ export default function Home() {
         }
 
         if (json.data) {
+          pendingImageRef.current = file;
           setCurrentReceipt({
             id: crypto.randomUUID(),
             uid: `FOTO-${Date.now().toString().slice(-6)}`,
@@ -156,24 +191,61 @@ export default function Home() {
   };
 
   const handleSaveCurrent = async () => {
-    if (!currentReceipt) return;
-
-    const saved = await saveToStorage([
-      currentReceipt,
-      ...savedReceipts,
-    ]);
-
-    if (saved) {
+    if (!currentReceipt || savingCurrent) return;
+    setSavingCurrent(true);
+    const file = pendingImageRef.current;
+    let uploadedPath: string | null = null;
+    try {
+      let receipt = currentReceipt;
+      if (file) {
+        const supabase = createClient();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError) throw authError;
+        if (!user) throw new Error("Používateľ nie je prihlásený.");
+        const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+        const path = `${user.id}/${receipt.id}.${extension}`;
+        const { error } = await supabase.storage.from("receipt-images")
+          .upload(path, file, { contentType: file.type, upsert: false });
+        if (error) throw error;
+        uploadedPath = path;
+        receipt = { ...receipt, imagePath: path };
+      }
+      const saved = await saveToStorage([receipt, ...savedReceipts]);
+      if (!saved) {
+        if (uploadedPath) {
+          await createClient().storage.from("receipt-images").remove([uploadedPath]);
+        }
+        return;
+      }
+      pendingImageRef.current = null;
       setCurrentReceipt(null);
+    } catch (error) {
+      if (uploadedPath) {
+        await createClient().storage.from("receipt-images").remove([uploadedPath]);
+      }
+      alert(error instanceof Error ? `Fotografiu sa nepodarilo uložiť: ${error.message}` : "Fotografiu sa nepodarilo uložiť.");
+    } finally {
+      setSavingCurrent(false);
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Naozaj chceš natrvalo vymazať tento doklad?")) return;
-    const saved = await saveToStorage(
-      savedReceipts.filter((item) => item.id !== id)
-    );
-    if (saved && editingReceipt?.id === id) setEditingReceipt(null);
+    const receipt = savedReceipts.find((item) => item.id === id);
+    const saved = await saveToStorage(savedReceipts.filter((item) => item.id !== id));
+    if (!saved) return;
+    if (editingReceipt?.id === id) {
+      setEditingReceipt(null);
+      setImageUrl(null);
+    }
+    if (receipt?.imagePath) {
+      const { error } = await createClient().storage.from("receipt-images")
+        .remove([receipt.imagePath]);
+      if (error) {
+        console.error("[Vexto] Nepodarilo sa odstrániť fotografiu:", error);
+        alert("Doklad bol vymazaný, ale fotografiu sa nepodarilo odstrániť z úložiska.");
+      }
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -434,10 +506,11 @@ export default function Home() {
             <button
               type="button"
               onClick={handleSaveCurrent}
+              disabled={savingCurrent}
               className="mt-2 w-full flex items-center justify-center gap-2 bg-neutral-900 hover:bg-neutral-800 text-white font-medium py-3 px-4 rounded-xl text-sm transition-all cursor-pointer shadow-sm"
             >
               <FileCheck className="w-4 h-4" />
-              Potvrdiť a uložiť do evidencie
+              {savingCurrent ? "Ukladám doklad a fotografiu..." : "Potvrdiť a uložiť do evidencie"}
             </button>
           </section>
         )}
@@ -450,6 +523,19 @@ export default function Home() {
                 <X className="w-4 h-4" />
               </button>
             </div>
+            {editingReceipt.imagePath && (
+              <div className="rounded-xl border border-neutral-200 p-3 space-y-2">
+                <p className="text-xs font-semibold text-neutral-700">Fotografia dokladu</p>
+                {imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={imageUrl} alt="Originál fotografie dokladu" className="max-h-96 w-full object-contain rounded-lg" />
+                ) : imageError ? (
+                  <p className="text-xs text-red-600">Fotografiu sa nepodarilo načítať.</p>
+                ) : (
+                  <p className="text-xs text-neutral-500">Načítavam fotografiu...</p>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {([
                 ["organizationName", "Predajca"],
@@ -552,7 +638,7 @@ export default function Home() {
 
                     <button
                       type="button"
-                      onClick={() => setEditingReceipt({ ...r })}
+                      onClick={() => openReceipt(r)}
                       aria-label={`Zobraziť a upraviť doklad ${r.organizationName}`}
                       title="Zobraziť a upraviť"
                       className="text-neutral-500 hover:text-emerald-700 p-1 rounded-md"

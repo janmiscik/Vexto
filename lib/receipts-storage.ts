@@ -23,6 +23,7 @@ export interface ParsedReceipt {
   verificationUrl?: string;
   source?: string;
   note?: string;
+  imagePath?: string;
 }
 
 let snapshot = EMPTY_SNAPSHOT;
@@ -37,6 +38,7 @@ function emitChange(): void {
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
+
   return () => listeners.delete(listener);
 }
 
@@ -64,8 +66,11 @@ async function loadReceipts(): Promise<void> {
 
   loadPromise = (async () => {
     const supabase = createClient();
-    const { data: { user }, error: authError } =
-      await supabase.auth.getUser();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
     if (authError) throw authError;
 
@@ -87,30 +92,38 @@ async function loadReceipts(): Promise<void> {
 
     if (revision !== currentRevision) return;
 
-    snapshot = JSON.stringify((data ?? []).map((row) => ({
-      id: row.id,
-      uid: row.uid ?? "",
-      ico: row.ico ?? "",
-      dic: row.dic ?? "",
-      icDph: row.ic_dph ?? "",
-      organizationName: row.organization_name ?? "",
-      issueDate: row.issue_date ?? "",
-      totalAmount: Number(row.total_amount ?? 0),
-      vatAmounts: Array.isArray(row.vat_amounts)
-        ? row.vat_amounts
-        : [],
-      verificationUrl: row.verification_url ?? undefined,
-      source: row.source ?? undefined,
-      note: row.note ?? undefined,
-    })));
+    snapshot = JSON.stringify(
+      (data ?? []).map((row) => ({
+        id: row.id,
+        uid: row.uid ?? "",
+        ico: row.ico ?? "",
+        dic: row.dic ?? "",
+        icDph: row.ic_dph ?? "",
+        organizationName: row.organization_name ?? "",
+        issueDate: row.issue_date ?? "",
+        totalAmount: Number(row.total_amount ?? 0),
+        vatAmounts: Array.isArray(row.vat_amounts)
+          ? row.vat_amounts
+          : [],
+        verificationUrl: row.verification_url ?? undefined,
+        source: row.source ?? undefined,
+        note: row.note ?? undefined,
+        imagePath: row.image_path ?? undefined,
+      }))
+    );
 
     emitChange();
-  })().catch((error: unknown) => {
-    console.error("[Vexto] Načítanie účteniek zlyhalo:", error);
-    throw error;
-  }).finally(() => {
-    loadPromise = null;
-  });
+  })()
+    .catch((error: unknown) => {
+      console.error(
+        "[Vexto] Načítanie účteniek zlyhalo:",
+        error
+      );
+      throw error;
+    })
+    .finally(() => {
+      loadPromise = null;
+    });
 
   return loadPromise;
 }
@@ -135,16 +148,23 @@ export async function saveReceipts(
   await loadReceipts();
 
   const supabase = createClient();
-  const { data: { user }, error: authError } =
-    await supabase.auth.getUser();
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
 
   if (authError) throw authError;
-  if (!user) throw new Error("Používateľ nie je prihlásený.");
 
-  const { data: existingRows, error: existingError } = await supabase
-    .from("receipts")
-    .select("id")
-    .eq("user_id", user.id);
+  if (!user) {
+    throw new Error("Používateľ nie je prihlásený.");
+  }
+
+  const { data: existingRows, error: existingError } =
+    await supabase
+      .from("receipts")
+      .select("id")
+      .eq("user_id", user.id);
 
   if (existingError) throw existingError;
 
@@ -162,6 +182,7 @@ export async function saveReceipts(
     verification_url: receipt.verificationUrl ?? null,
     source: receipt.source ?? null,
     note: receipt.note ?? null,
+    image_path: receipt.imagePath ?? null,
   }));
 
   if (rows.length) {
@@ -172,7 +193,10 @@ export async function saveReceipts(
     if (error) throw error;
   }
 
-  const retainedIds = new Set(receipts.map((receipt) => receipt.id));
+  const retainedIds = new Set(
+    receipts.map((receipt) => receipt.id)
+  );
+
   const obsoleteIds = (existingRows ?? [])
     .map((row) => row.id)
     .filter((id) => !retainedIds.has(id));
