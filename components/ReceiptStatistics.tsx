@@ -32,6 +32,17 @@ export default function ReceiptStatistics({ receipts }: Props) {
     return { key, label: new Intl.DateTimeFormat("sk-SK", { month: "short" }).format(monthDate), amount };
   }) : [];
   const maximum = Math.max(...months.map((month) => month.amount), 0);
+  const merchants = Object.values(receipts.reduce<Record<string, { name: string; amount: number; count: number }>>((groups, receipt) => {
+    const name = receipt.organizationName?.trim() || "Neznámy obchodník";
+    const key = name.toLocaleLowerCase("sk-SK");
+    const value = Number(receipt.totalAmount);
+    if (!groups[key]) groups[key] = { name, amount: 0, count: 0 };
+    groups[key].amount += Number.isFinite(value) ? value : 0;
+    groups[key].count += 1;
+    return groups;
+  }, {})).sort((a, b) => b.amount - a.amount).slice(0, 5);
+  const merchantMaximum = Math.max(0, ...merchants.map((merchant) => merchant.amount));
+
 
   return (
     <section className="rounded-2xl border border-neutral-100 bg-white p-5 shadow-sm" aria-label="Štatistiky výdavkov">
@@ -65,6 +76,25 @@ export default function ReceiptStatistics({ receipts }: Props) {
         ))}
       </div>
       <p className="mt-3 text-xs text-neutral-500">Graf zahŕňa doklady s platným dátumom v uvedenom období. Súhrn zahŕňa všetky uložené doklady.</p>
+      <h3 className="mb-3 mt-6 text-sm font-semibold text-neutral-800">Top 5 obchodníkov podľa výdavkov</h3>
+      {merchants.length === 0 ? (
+        <p className="text-sm text-neutral-500">Zatiaľ nemáš uložené žiadne doklady.</p>
+      ) : (
+        <div className="space-y-3">
+          {merchants.map((merchant) => (
+            <div key={merchant.name.toLocaleLowerCase("sk-SK")}>
+              <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+                <span className="min-w-0 break-words font-medium text-neutral-800">{merchant.name}</span>
+                <span className="shrink-0 text-neutral-600">{money(merchant.amount)} · {merchant.count} {merchant.count === 1 ? "doklad" : merchant.count < 5 ? "doklady" : "dokladov"}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-neutral-100">
+                <div className="h-full rounded-full bg-emerald-600" style={{ width: `${merchantMaximum > 0 ? Math.max(0, (merchant.amount / merchantMaximum) * 100) : 0}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
     </section>
   );
 }
