@@ -53,6 +53,7 @@ export default function Home() {
     useState<ParsedReceipt | null>(null);
 
   const [editingReceipt, setEditingReceipt] = useState<ParsedReceipt | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const savedReceipts = useSavedReceipts();
   const [searchQuery, setSearchQuery] = useState("");
@@ -79,6 +80,14 @@ export default function Home() {
     });
     return () => { active = false; };
   }, [editingReceipt?.imagePath]);
+
+  useEffect(() => {
+    if (!editingReceipt?.id) return;
+    const frame = window.requestAnimationFrame(() => {
+      editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [editingReceipt?.id]);
 
   const openReceipt = (receipt: ParsedReceipt) => {
     setImageUrl(null);
@@ -385,7 +394,8 @@ export default function Home() {
         )}
 
         {editingReceipt && (
-          <ReceiptEditor
+          <div ref={editorRef} className="scroll-mt-4">
+            <ReceiptEditor
             editingReceipt={editingReceipt}
             savingEdit={savingEdit}
             imageUrl={imageUrl}
@@ -393,7 +403,8 @@ export default function Home() {
             onChange={setEditingReceipt}
             onClose={() => setEditingReceipt(null)}
             onSave={handleSaveEdit}
-          />
+            />
+          </div>
         )}
 
         <ReceiptStatistics receipts={savedReceipts} />
