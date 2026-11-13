@@ -66,6 +66,8 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [amountFrom, setAmountFrom] = useState("");
+  const [amountTo, setAmountTo] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("newest");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingImageRef = useRef<File | null>(null);
@@ -289,6 +291,14 @@ export default function Home() {
   };
 
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase("sk");
+  const parseAmount = (value: string): number | null => {
+    const normalized = value.trim().replace(",", ".");
+    if (!normalized || !/^\d+(?:\.\d{0,2})?$/.test(normalized)) return null;
+    const number = Number(normalized);
+    return Number.isFinite(number) ? number : null;
+  };
+  const minimumAmount = parseAmount(amountFrom);
+  const maximumAmount = parseAmount(amountTo);
   const filteredReceipts = savedReceipts
     .filter((receipt) => {
       const receiptDate = (receipt.issueDate || "").slice(0, 10);
@@ -297,7 +307,12 @@ export default function Home() {
         receipt.ico,
         receipt.uid,
       ].some((value) => (value || "").toLocaleLowerCase("sk").includes(normalizedQuery));
-      return matchesQuery && (!dateFrom || receiptDate >= dateFrom) && (!dateTo || receiptDate <= dateTo);
+      const amount = Number(receipt.totalAmount);
+      const matchesAmount = Number.isFinite(amount) &&
+        (minimumAmount === null || amount >= minimumAmount) &&
+        (maximumAmount === null || amount <= maximumAmount);
+      return matchesQuery && (!dateFrom || receiptDate >= dateFrom) &&
+        (!dateTo || receiptDate <= dateTo) && matchesAmount;
     })
     .sort((a, b) => {
       if (sortBy === "highest") return Number(b.totalAmount || 0) - Number(a.totalAmount || 0);
@@ -452,12 +467,16 @@ export default function Home() {
           searchQuery={searchQuery}
           dateFrom={dateFrom}
           dateTo={dateTo}
+          amountFrom={amountFrom}
+          amountTo={amountTo}
           sortBy={sortBy}
           onSearchQueryChange={setSearchQuery}
           onDateFromChange={setDateFrom}
           onDateToChange={setDateTo}
+          onAmountFromChange={setAmountFrom}
+          onAmountToChange={setAmountTo}
           onSortByChange={setSortBy}
-          onClear={() => { setSearchQuery(""); setDateFrom(""); setDateTo(""); setSortBy("newest"); }}
+          onClear={() => { setSearchQuery(""); setDateFrom(""); setDateTo(""); setAmountFrom(""); setAmountTo(""); setSortBy("newest"); }}
           onExport={() => exportPohodaXml(filteredReceipts)}
           onExportCsv={() => exportReceiptsCsv(filteredReceipts)}
           onOpen={openReceipt}

@@ -12,10 +12,14 @@ type Props = {
   searchQuery: string;
   dateFrom: string;
   dateTo: string;
+  amountFrom: string;
+  amountTo: string;
   sortBy: SortBy;
   onSearchQueryChange: (value: string) => void;
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
+  onAmountFromChange: (value: string) => void;
+  onAmountToChange: (value: string) => void;
   onSortByChange: (value: SortBy) => void;
   onClear: () => void;
   onExport: () => void;
@@ -26,8 +30,9 @@ type Props = {
 
 export default function ReceiptList({
   savedReceipts, filteredReceipts, totalSum, filteredSum,
-  searchQuery, dateFrom, dateTo, sortBy,
+  searchQuery, dateFrom, dateTo, amountFrom, amountTo, sortBy,
   onSearchQueryChange, onDateFromChange, onDateToChange,
+  onAmountFromChange, onAmountToChange,
   onSortByChange, onClear, onExport, onExportCsv, onOpen, onDelete,
 }: Props) {
   return (
@@ -72,10 +77,14 @@ export default function ReceiptList({
             searchQuery={searchQuery}
             dateFrom={dateFrom}
             dateTo={dateTo}
+            amountFrom={amountFrom}
+            amountTo={amountTo}
             sortBy={sortBy}
             onSearchQueryChange={onSearchQueryChange}
             onDateFromChange={onDateFromChange}
             onDateToChange={onDateToChange}
+            onAmountFromChange={onAmountFromChange}
+            onAmountToChange={onAmountToChange}
             onSortByChange={onSortByChange}
             onClear={onClear}
           />
