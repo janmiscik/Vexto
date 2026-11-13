@@ -55,6 +55,13 @@ export default function Home() {
   const [editingReceipt, setEditingReceipt] = useState<ParsedReceipt | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
   const savedReceipts = useSavedReceipts();
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -235,6 +242,7 @@ export default function Home() {
     const receipt = savedReceipts.find((item) => item.id === id);
     const saved = await saveToStorage(savedReceipts.filter((item) => item.id !== id));
     if (!saved) return;
+    setNotice("Doklad bol úspešne vymazaný.");
     if (editingReceipt?.id === id) {
       setEditingReceipt(null);
       setImageUrl(null);
@@ -271,7 +279,10 @@ export default function Home() {
           item.id === editingReceipt.id ? editingReceipt : item
         )
       );
-      if (saved) setEditingReceipt(null);
+      if (saved) {
+        setEditingReceipt(null);
+        setNotice("Doklad bol úspešne upravený.");
+      }
     } finally {
       setSavingEdit(false);
     }
@@ -331,6 +342,15 @@ export default function Home() {
         .vexto-dark .text-white { color: #fff !important; }
         .vexto-dark button:hover { filter: brightness(1.12); }
       `}</style>
+      {notice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-medium text-emerald-700 shadow-lg"
+        >
+          {notice}
+        </div>
+      )}
       <div className="max-w-xl mx-auto space-y-6">
         <div className="flex justify-end">
           <button type="button" onClick={toggleTheme}
