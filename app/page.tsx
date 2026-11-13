@@ -22,6 +22,8 @@ import {
   Sparkles,
   Pencil,
   X,
+  Moon,
+  Sun,
 } from "lucide-react";
 
 function escapeXml(value: string | number): string {
@@ -34,6 +36,23 @@ function escapeXml(value: string | number): string {
 }
 
 export default function Home() {
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setDarkMode(window.localStorage.getItem("vexto-theme") === "dark");
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  const toggleTheme = () => {
+    setDarkMode((previous) => {
+      const next = !previous;
+      window.localStorage.setItem("vexto-theme", next ? "dark" : "light");
+      return next;
+    });
+  };
+
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingText, setLoadingText] = useState<string>("Spracovávam...");
   const [currentReceipt, setCurrentReceipt] =
@@ -349,8 +368,41 @@ export default function Home() {
   );
 
   return (
-    <main className="min-h-screen bg-neutral-50 py-10 px-4 font-sans text-neutral-900">
+    <main className={`vexto-app min-h-screen bg-neutral-50 py-10 px-4 font-sans text-neutral-900 ${darkMode ? "vexto-dark" : ""}`}>
+      <style>{`
+        .vexto-dark { background: #0b1220 !important; color: #e5e7eb !important; color-scheme: dark; }
+        .vexto-dark .bg-white { background-color: #172235 !important; }
+        .vexto-dark .bg-neutral-50 { background-color: #111c2e !important; }
+        .vexto-dark .bg-neutral-100 { background-color: #243349 !important; }
+        .vexto-dark .bg-emerald-50 { background-color: #123b34 !important; }
+        .vexto-dark .bg-amber-50 { background-color: #46381b !important; }
+        .vexto-dark .text-neutral-900, .vexto-dark .text-neutral-800 { color: #f3f4f6 !important; }
+        .vexto-dark .text-neutral-700, .vexto-dark .text-neutral-600 { color: #d1d5db !important; }
+        .vexto-dark .text-neutral-500, .vexto-dark .text-neutral-400 { color: #aeb9c9 !important; }
+        .vexto-dark .text-emerald-700, .vexto-dark .text-emerald-600 { color: #6ee7b7 !important; }
+        .vexto-dark .text-amber-900 { color: #fde68a !important; }
+        .vexto-dark .border-neutral-100, .vexto-dark .border-neutral-200,
+        .vexto-dark .border-emerald-100, .vexto-dark .border-emerald-200 { border-color: #354359 !important; }
+        .vexto-dark .border-amber-200 { border-color: #846c35 !important; }
+        .vexto-dark input, .vexto-dark select, .vexto-dark textarea {
+          background-color: #111c2e !important; color: #f3f4f6 !important;
+          border-color: #45546b !important;
+        }
+        .vexto-dark input::placeholder, .vexto-dark textarea::placeholder { color: #aeb9c9 !important; }
+        .vexto-dark .bg-neutral-900 { background-color: #334155 !important; }
+        .vexto-dark .text-white { color: #fff !important; }
+        .vexto-dark button:hover { filter: brightness(1.12); }
+      `}</style>
       <div className="max-w-xl mx-auto space-y-6">
+        <div className="flex justify-end">
+          <button type="button" onClick={toggleTheme}
+            aria-label={darkMode ? "Zapnúť svetlý režim" : "Zapnúť tmavý režim"}
+            aria-pressed={darkMode}
+            className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-100">
+            {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {darkMode ? "Svetlý režim" : "Tmavý režim"}
+          </button>
+        </div>
         <header className="text-center">
           <span className="text-xs uppercase tracking-wider font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
             Vexto
@@ -660,6 +712,9 @@ export default function Home() {
             )}
           </div>
         </section>
+        <footer className="pt-4 text-center text-xs text-neutral-500">
+          Created by ©JanMi 2026 · Vexto
+        </footer>
       </div>
     </main>
   );
