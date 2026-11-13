@@ -11,10 +11,13 @@ import ReceiptEditor from "@/components/ReceiptEditor";
 import ReceiptForm from "@/components/ReceiptForm";
 import { exportPohodaXml } from "@/lib/pohoda-export";
 import { exportReceiptsCsv } from "@/lib/receipt-csv-export";
+import { downloadReceiptsBackup } from "@/lib/receipt-backup";
+import { previewReceiptsRestore, restoreReceiptsBackup } from "@/lib/receipt-restore";
 import { scanReceipt, recognizeReceiptPhoto } from "@/lib/receipt-capture";
 import { findPotentialDuplicate } from "@/lib/receipt-duplicates";
 import {
   saveReceipts,
+  refreshSavedReceipts,
   useSavedReceipts,
   type ParsedReceipt,
 } from "@/lib/receipts-storage";
@@ -59,6 +62,9 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingImageRef = useRef<File | null>(null);
   const [savingCurrent, setSavingCurrent] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const restoreInputRef = useRef<HTMLInputElement | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
 
@@ -96,6 +102,41 @@ export default function Home() {
       );
 
       return false;
+    }
+  };
+
+  const handleBackup = async () => {
+    if (backingUp) return;
+    setBackingUp(true);
+    try {
+      const result = await downloadReceiptsBackup();
+      alert(`Záloha bola pripravená na stiahnutie: ${result.count} dokladov a ${result.images} fotografií.`);
+    } catch (error) {
+      alert(error instanceof Error ? `Zálohovanie zlyhalo: ${error.message}` : "Zálohovanie zlyhalo.");
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  const handleRestore = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || restoring) return;
+    setRestoring(true);
+    try {
+      const preview = await previewReceiptsRestore(file);
+      const approved = window.confirm(
+        `Obnova zo zálohy\n\nDokladov v zálohe: ${preview.total}\nNových na obnovenie: ${preview.toImport}\nPreskočených duplicít: ${preview.duplicates}\nFotografií na obnovenie: ${preview.images}\n\nExistujúce doklady sa nevymažú ani neprepíšu. Pokračovať?`
+      );
+      if (!approved) return;
+      const result = await restoreReceiptsBackup(file);
+      await refreshSavedReceipts();
+      alert(`Obnova dokončená.\nPridané: ${result.imported}\nPreskočené: ${result.skipped}\nNeúspešné: ${result.failed}${result.errors.length ? `\n\n${result.errors.slice(0, 5).join("\n")}` : ""}`);
+    } catch (error) {
+      await refreshSavedReceipts().catch(() => {});
+      alert(error instanceof Error ? `Obnova zlyhala: ${error.message}` : "Obnova zlyhala.");
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -356,6 +397,21 @@ export default function Home() {
         )}
 
         <ReceiptStatistics receipts={savedReceipts} />
+
+        <section className="bg-white p-4 rounded-2xl border border-neutral-100 shadow-sm space-y-2">
+          <h2 className="text-sm font-semibold">Záloha dokladov</h2>
+          <p className="text-xs text-neutral-500">Stiahni všetky svoje doklady a fotografie v jednom ZIP súbore. Záloha nie je šifrovaná, uchovávaj ju bezpečne.</p>
+          <button type="button" disabled={backingUp} onClick={handleBackup}
+            className="w-full rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white disabled:opacity-50">
+            {backingUp ? "Pripravujem zálohu…" : "Stiahnuť úplnú zálohu (ZIP)"}
+          </button>
+          <input ref={restoreInputRef} type="file" accept=".zip,application/zip" className="hidden" onChange={handleRestore} />
+          <button type="button" disabled={restoring || backingUp} onClick={() => restoreInputRef.current?.click()}
+            className="w-full rounded-xl border border-neutral-200 bg-neutral-100 px-4 py-3 text-sm font-medium text-neutral-900 disabled:opacity-50">
+            {restoring ? "Obnovujem doklady…" : "Obnoviť doklady zo zálohy (ZIP)"}
+          </button>
+          <p className="text-xs text-neutral-500">Pred obnovením sa zobrazí náhľad. Existujúce doklady zostanú zachované.</p>
+        </section>
 
         <ReceiptList
           savedReceipts={savedReceipts}

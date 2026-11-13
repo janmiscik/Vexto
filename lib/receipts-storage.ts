@@ -142,6 +142,12 @@ export function useSavedReceipts(): ParsedReceipt[] {
   return parseReceipts(currentSnapshot);
 }
 
+/** Refreshes the shared UI snapshot after additive imports. */
+export async function refreshSavedReceipts(): Promise<void> {
+  revision++;
+  await loadReceipts();
+}
+
 export async function saveReceipts(
   receipts: ParsedReceipt[]
 ): Promise<void> {
