@@ -1,6 +1,4 @@
-
 "use client";
-
 import { useState, useRef, useEffect } from "react";
 import { uploadReceiptImage, removeReceiptImage, getReceiptImageSignedUrl } from "@/lib/receipt-images";
 import QrScanner from "@/components/QrScanner";
@@ -28,17 +26,14 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
-
 export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
-
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       setDarkMode(window.localStorage.getItem("vexto-theme") === "dark");
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
-
   const toggleTheme = () => {
     setDarkMode((previous) => {
       const next = !previous;
@@ -46,17 +41,14 @@ export default function Home() {
       return next;
     });
   };
-
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingText, setLoadingText] = useState<string>("Spracovávam...");
   const [currentReceipt, setCurrentReceipt] =
     useState<ParsedReceipt | null>(null);
-
   const [editingReceipt, setEditingReceipt] = useState<ParsedReceipt | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-
   useEffect(() => {
     if (!notice) return;
     const timeout = window.setTimeout(() => setNotice(null), 4000);
@@ -77,7 +69,6 @@ export default function Home() {
   const restoreInputRef = useRef<HTMLInputElement | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
-
   useEffect(() => {
     const path = editingReceipt?.imagePath;
     if (!path) return;
@@ -89,7 +80,6 @@ export default function Home() {
     });
     return () => { active = false; };
   }, [editingReceipt?.imagePath]);
-
   useEffect(() => {
     if (!editingReceipt?.id) return;
     const frame = window.requestAnimationFrame(() => {
@@ -97,13 +87,11 @@ export default function Home() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [editingReceipt?.id]);
-
   const openReceipt = (receipt: ParsedReceipt) => {
     setImageUrl(null);
     setImageError(false);
     setEditingReceipt({ ...receipt });
   };
-
   const saveToStorage = async (
     items: ParsedReceipt[]
   ): Promise<boolean> => {
@@ -112,17 +100,14 @@ export default function Home() {
       return true;
     } catch (error) {
       console.error("[Vexto] Uloženie účteniek zlyhalo:", error);
-
       alert(
         error instanceof Error
           ? `Doklady sa nepodarilo uložiť: ${error.message}`
           : "Doklady sa nepodarilo uložiť."
       );
-
       return false;
     }
   };
-
   const handleBackup = async () => {
     if (backingUp) return;
     setBackingUp(true);
@@ -135,7 +120,6 @@ export default function Home() {
       setBackingUp(false);
     }
   };
-
   const handleRestore = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -157,13 +141,11 @@ export default function Home() {
       setRestoring(false);
     }
   };
-
   const handleScan = async (scannedText: string) => {
     pendingImageRef.current = null;
     setCurrentReceipt(null);
     setLoadingText("Overujem QR kód...");
     setLoading(true);
-
     try {
       const result = await scanReceipt(scannedText);
       setCurrentReceipt(result);
@@ -173,7 +155,6 @@ export default function Home() {
       setLoading(false);
     }
   };
-
   const handlePhotoUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -186,10 +167,8 @@ export default function Home() {
     }
     pendingImageRef.current = null;
     setCurrentReceipt(null);
-
     setLoadingText("Gemini AI číta údaje z bločku...");
     setLoading(true);
-
     try {
       const receipt = await recognizeReceiptPhoto(file);
       pendingImageRef.current = file;
@@ -202,7 +181,6 @@ export default function Home() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
-
   const handleSaveCurrent = async () => {
     if (!currentReceipt || savingCurrent) return;
     const duplicate = findPotentialDuplicate(currentReceipt, savedReceipts);
@@ -238,7 +216,6 @@ export default function Home() {
       setSavingCurrent(false);
     }
   };
-
   const handleDelete = async (id: string) => {
     if (!window.confirm("Naozaj chceš natrvalo vymazať tento doklad?")) return;
     const receipt = savedReceipts.find((item) => item.id === id);
@@ -257,7 +234,6 @@ export default function Home() {
       }
     }
   };
-
   const handleSaveEdit = async () => {
     if (!editingReceipt || savingEdit) return;
     if (!editingReceipt.organizationName.trim()) {
@@ -274,6 +250,27 @@ export default function Home() {
       alert("Zadaj platnú sumu dokladu.");
       return;
     }
+    const vatRows = editingReceipt.vatAmounts ?? [];
+    if (vatRows.length > 0) {
+      const validRows = vatRows.every((row) =>
+        Number.isFinite(row.vatRate) && row.vatRate >= 0 && row.vatRate <= 100 &&
+        Number.isFinite(row.baseAmount) && row.baseAmount >= 0 &&
+        Number.isFinite(row.vatAmount) && row.vatAmount >= 0
+      );
+      if (!validRows) {
+        alert("Rozpis DPH obsahuje neplatné hodnoty. Oprav ich pred uložením.");
+        return;
+      }
+      const vatTotalCents = vatRows.reduce(
+        (sum, row) => sum + Math.round((row.baseAmount + row.vatAmount) * 100), 0
+      );
+      const receiptTotalCents = Math.round(editingReceipt.totalAmount * 100);
+      if (vatTotalCents !== receiptTotalCents) {
+        const difference = Math.abs(vatTotalCents - receiptTotalCents) / 100;
+        alert(`Rozpis DPH nesúhlasí s celkovou sumou dokladu. Rozdiel: ${difference.toFixed(2).replace(".", ",")} €. Oprav údaje pred uložením.`);
+        return;
+      }
+    }
     setSavingEdit(true);
     try {
       const saved = await saveToStorage(
@@ -289,7 +286,6 @@ export default function Home() {
       setSavingEdit(false);
     }
   };
-
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase("sk");
   const parseAmount = (value: string): number | null => {
     const normalized = value.trim().replace(",", ".");
@@ -320,17 +316,14 @@ export default function Home() {
       const dateComparison = (a.issueDate || "").localeCompare(b.issueDate || "");
       return sortBy === "oldest" ? dateComparison : -dateComparison;
     });
-
   const filteredSum = filteredReceipts.reduce(
     (sum, item) => sum + Number(item.totalAmount || 0),
     0
   );
-
   const totalSum = savedReceipts.reduce(
     (sum, item) => sum + Number(item.totalAmount || 0),
     0
   );
-
   return (
     <main className={`vexto-app min-h-screen bg-neutral-50 py-10 px-4 font-sans text-neutral-900 ${darkMode ? "vexto-dark" : ""}`}>
       <style>{`
@@ -380,16 +373,13 @@ export default function Home() {
           <span className="text-xs uppercase tracking-wider font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
             Vexto
           </span>
-
           <h1 className="text-2xl font-bold tracking-tight mt-3">
             Evidencia dokladov
           </h1>
-
           <p className="text-sm text-neutral-500 mt-1">
             Zosnímaj QR kód alebo odfoť celý bloček pomocou AI
           </p>
         </header>
-
         <div className="bg-white p-4 rounded-2xl border border-neutral-100 shadow-sm flex flex-col gap-2">
           <input
             type="file"
@@ -398,7 +388,6 @@ export default function Home() {
             onChange={handlePhotoUpload}
             className="hidden"
           />
-
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -409,16 +398,13 @@ export default function Home() {
             Odfoť celý bloček (AI vyťaženie)
           </button>
         </div>
-
         <QrScanner onScanSuccess={handleScan} />
-
         {loading && (
           <div className="flex items-center justify-center gap-2 text-sm text-neutral-600 p-6 bg-white rounded-2xl border border-neutral-100 shadow-sm">
             <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
             <span>{loadingText}</span>
           </div>
         )}
-
         {currentReceipt && (
           <ReceiptForm
             receipt={currentReceipt}
@@ -427,7 +413,6 @@ export default function Home() {
             onSave={handleSaveCurrent}
           />
         )}
-
         {editingReceipt && (
           <div ref={editorRef} className="scroll-mt-4">
             <ReceiptEditor
@@ -441,9 +426,7 @@ export default function Home() {
             />
           </div>
         )}
-
         <ReceiptStatistics receipts={savedReceipts} />
-
         <section className="bg-white p-4 rounded-2xl border border-neutral-100 shadow-sm space-y-2">
           <h2 className="text-sm font-semibold">Záloha dokladov</h2>
           <p className="text-xs text-neutral-500">Stiahni všetky svoje doklady a fotografie v jednom ZIP súbore. Záloha nie je šifrovaná, uchovávaj ju bezpečne.</p>
@@ -458,7 +441,6 @@ export default function Home() {
           </button>
           <p className="text-xs text-neutral-500">Pred obnovením sa zobrazí náhľad. Existujúce doklady zostanú zachované.</p>
         </section>
-
         <ReceiptList
           savedReceipts={savedReceipts}
           filteredReceipts={filteredReceipts}
